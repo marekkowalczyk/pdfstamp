@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+
+# Function to display usage
+usage() {
+  cat << EOF
+Usage: ${0##*/} [OPTIONS] [FILE]...
+Add the filename as a watermark to PDF files.
+
+Options:
+  -f, --first    Only stamp the first page (default: all pages)
+  -n, --dry-run  Show what would be done without modifying files
+  -v, --verbose  Explain what is being done
+  -h, --help     Display this help and exit
+
+Note: Options can be placed anywhere in the command.
+EOF
+  exit 0
+}
+
+# Defaults
+stamp_first_page=false
+dry_run=false
+verbose=false
+exit_status=0
+files=()
+
+# 1. Flexible Argument Parsing
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help)    usage ;;
+    -f|--first)   stamp_first_page=true; shift ;;
+    -n|--dry-run) dry_run=true; shift ;;
+    -v|--verbose) verbose=true; shift ;;
+    --)           shift; files+=("$@"); break ;; 
+    -*)           echo "Error: Unknown option '$1'" >&2; exit 1 ;;
+    *)            files+=("$1"); shift ;;         
+  esac
+done
+
+if [[ ${#files[@]} -eq 0 ]]; then
+  echo "Error: No files specified." >&2; exit 1
+fi
+
+# 2. Process collected files
+for file in "${files[@]}"; do
+  if [[ ! -f "$file" ]]; then
+    echo "Error: '$file' not found." >&2
+    exit_status=1
+    continue
+  fi
+
+  # FIX: Ensure a range is ALWAYS explicitly passed to cpdf.
+  # If -f is not set, we use 'all' to ensure styles (-bottom, -font) are applied.
+  range="all"
+  [[ "$stamp_first_page" == true ]] && range="1"
+
+  # Construct cpdf command
+  # Note: The range must follow the text string immediately
+  tmp=$(mktemp "$(dirname "$file")/.pdfstamp.XXXXXX")
+  cmd=(cpdf "$file" -add-text "%filename" "$range" -bottom 16 -font "Helvetica" -color "black" -opacity 0.3 -o "$tmp")
+
+  if [ "$dry_run" = true ]; then
+    rm -f "$tmp"
+    echo "[DRY-RUN] Would execute: ${cmd[*]/-o "$tmp"/-o "$file"}"
+  else
+    [[ "$verbose" == true ]] && printf "Stamping: %s (range: %s)\n" "$file" "$range"
+
+    if "${cmd[@]}" 2>/dev/null; then
+      mv "$tmp" "$file"
+    else
+      rm -f "$tmp"
+      echo "Error: Failed to process '$file'" >&2
+      exit_status=1
+    fi
+  fi
+done
+
+exit "$exit_status"
