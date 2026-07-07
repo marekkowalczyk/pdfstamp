@@ -3,16 +3,17 @@
 # Function to display usage
 usage() {
   cat << EOF
-Usage: ${0##*/} [OPTIONS] [-- ] [FILE... | .]
+Usage: ${0##*/} [OPTIONS] [-- ] [FILE... | . | --all]
 Add the filename as a watermark to PDF files.
 
 Options:
   -f, --first    Only stamp the first page (default: all pages)
+  -a, --all      Process all *.pdf / *.PDF files in the current directory
   -n, --dry-run  Show what would be done without modifying files
   -v, --verbose  Explain what is being done
   -h, --help     Display this help and exit
 
-Passing . processes all *.pdf / *.PDF files in the current directory.
+Passing . is equivalent to --all.
 
 Note: Options can be placed anywhere in the command.
 EOF
@@ -34,9 +35,9 @@ while [[ $# -gt 0 ]]; do
     -f|--first)   stamp_first_page=true; shift ;;
     -n|--dry-run) dry_run=true; shift ;;
     -v|--verbose) verbose=true; shift ;;
+    -a|--all|.)   all=true; shift ;;
     --)           shift; files+=("$@"); break ;;
     -*)           echo "Error: Unknown option '$1'" >&2; exit 1 ;;
-    .)            all=true; shift ;;
     *)            files+=("$1"); shift ;;
   esac
 done
