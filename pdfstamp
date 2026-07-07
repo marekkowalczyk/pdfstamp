@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
-# Function to display usage
+VERSION="1.1.0"
+
 usage() {
   cat << EOF
 Usage: ${0##*/} [OPTIONS] [-- ] [FILE... | . | --all]
@@ -10,12 +11,11 @@ Options:
   -f, --first    Only stamp the first page (default: all pages)
   -a, --all      Process all *.pdf / *.PDF files in the current directory
   -n, --dry-run  Show what would be done without modifying files
-  -v, --verbose  Explain what is being done
+  -q, --quiet    Suppress non-error output
   -h, --help     Display this help and exit
+  --version      Print version and exit
 
 Passing . is equivalent to --all.
-
-Note: Options can be placed anywhere in the command.
 EOF
   exit 0
 }
@@ -23,27 +23,37 @@ EOF
 # Defaults
 stamp_first_page=false
 dry_run=false
-verbose=false
+quiet=false
 exit_status=0
 files=()
 all=false
 
-# 1. Flexible Argument Parsing
+# Argument parsing
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -h|--help)    usage ;;
+    --version)
+      echo "pdfstamp $VERSION"
+      if command -v cpdf >/dev/null 2>&1; then
+        cpdf -version 2>&1 | head -1
+      else
+        echo "cpdf: not found" >&2
+      fi
+      exit 0 ;;
     -f|--first)   stamp_first_page=true; shift ;;
     -n|--dry-run) dry_run=true; shift ;;
-    -v|--verbose) verbose=true; shift ;;
+    -q|--quiet)   quiet=true; shift ;;
     -a|--all|.)   all=true; shift ;;
     --)           shift; files+=("$@"); break ;;
-    -*)           echo "Error: Unknown option '$1'" >&2; exit 1 ;;
+    -*)           echo "pdfstamp: unknown option '$1'" >&2; exit 1 ;;
     *)            files+=("$1"); shift ;;
   esac
 done
 
+log() { [[ "$quiet" == false ]] && echo "$@"; }
+
 if [[ "$all" == true && ${#files[@]} -gt 0 ]]; then
-  echo "Error: cannot combine . with explicit filenames." >&2; exit 1
+  echo "pdfstamp: cannot combine --all with explicit filenames" >&2; exit 1
 fi
 
 if [[ "$all" == true ]]; then
@@ -52,44 +62,69 @@ if [[ "$all" == true ]]; then
     [[ -f "$f" ]] && expanded+=("$f")
   done
   if [[ ${#expanded[@]} -eq 0 ]]; then
-    echo "Error: no PDF files found in current directory." >&2; exit 1
+    echo "pdfstamp: no PDF files found in current directory" >&2; exit 1
   fi
   files=("${expanded[@]}")
 fi
 
 if [[ ${#files[@]} -eq 0 ]]; then
-  echo "Error: No files specified." >&2; exit 1
+  echo "pdfstamp: no files specified" >&2; exit 1
 fi
 
-# 2. Process collected files
+# Deduplicate, warning on repeats
+seen=()
+unique_files=()
+for f in "${files[@]}"; do
+  already=0
+  for s in "${seen[@]}"; do
+    [[ "$s" == "$f" ]] && already=1 && break
+  done
+  if [[ "$already" -eq 1 ]]; then
+    echo "pdfstamp: '$f' specified more than once, skipping duplicate" >&2
+  else
+    seen+=("$f")
+    unique_files+=("$f")
+  fi
+done
+files=("${unique_files[@]}")
+
+# Clean up temp file on exit/interrupt
+tmpfile=""
+cleanup() { [[ -n "$tmpfile" ]] && rm -f "$tmpfile"; }
+trap cleanup INT TERM EXIT
+
+# Process files
 for file in "${files[@]}"; do
+  # Normalize filenames starting with - so cpdf doesn't treat them as flags
+  [[ "$file" == -* ]] && file="./$file"
+
   if [[ ! -f "$file" ]]; then
-    echo "Error: '$file' not found." >&2
+    echo "pdfstamp: '$file' not found, skipping" >&2
     exit_status=1
     continue
   fi
 
-  # FIX: Ensure a range is ALWAYS explicitly passed to cpdf.
-  # If -f is not set, we use 'all' to ensure styles (-bottom, -font) are applied.
   range="all"
   [[ "$stamp_first_page" == true ]] && range="1"
 
-  # Construct cpdf command
-  # Note: The range must follow the text string immediately
-  tmp=$(mktemp "$(dirname "$file")/.pdfstamp.XXXXXX")
-  cmd=(cpdf "$file" -add-text "%filename" "$range" -bottom 16 -font "Helvetica" -color "black" -opacity 0.3 -o "$tmp")
+  dir=$(dirname "$file")
+  tmpfile=$(mktemp "${dir}/.pdfstamp.XXXXXX")
 
-  if [ "$dry_run" = true ]; then
-    rm -f "$tmp"
-    echo "[DRY-RUN] Would execute: ${cmd[*]/-o "$tmp"/-o "$file"}"
+  if [[ "$dry_run" == true ]]; then
+    rm -f "$tmpfile"; tmpfile=""
+    log "$file: [dry-run] would stamp (range: $range)"
   else
-    [[ "$verbose" == true ]] && printf "Stamping: %s (range: %s)\n" "$file" "$range"
-
-    if "${cmd[@]}" 2>/dev/null; then
-      mv "$tmp" "$file"
+    if cpdf "$file" -add-text "%filename" "$range" -bottom 16 -font "Helvetica" -color "black" -opacity 0.3 -o "$tmpfile" 2>/dev/null && [[ -s "$tmpfile" ]]; then
+      chmod "$(stat -f%Mp%Lp "$file")" "$tmpfile"
+      while IFS= read -r attr; do
+        [[ -n "$attr" ]] && xattr -wx "$attr" "$(xattr -px "$attr" "$file")" "$tmpfile" 2>/dev/null
+      done < <(xattr "$file" 2>/dev/null)
+      mv "$tmpfile" "$file"
+      tmpfile=""
+      log "$file: stamped"
     else
-      rm -f "$tmp"
-      echo "Error: Failed to process '$file'" >&2
+      rm -f "$tmpfile"; tmpfile=""
+      echo "pdfstamp: failed to process '$file'" >&2
       exit_status=1
     fi
   fi
