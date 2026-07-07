@@ -52,7 +52,13 @@ For each PDF file:
 
 ## Development
 
-Run tests:
+Install the pre-commit hook (runs the test suite before every commit):
+
+```bash
+bash hooks/install.sh
+```
+
+Run tests manually:
 
 ```bash
 bats tests/pdfstamp.bats
