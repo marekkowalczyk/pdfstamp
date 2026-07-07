@@ -9,6 +9,7 @@
 - [x] ~~README.md~~
 - [x] ~~CLAUDE.md~~
 - [x] ~~`pdftools/CONVENTIONS.md` — added Repo structure section~~
+- [x] ~~AAR.md~~
 
 ## Open questions
 
