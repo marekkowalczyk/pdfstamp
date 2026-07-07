@@ -1,5 +1,11 @@
 # Next Session
 
+## Completed last session ✓
+
+- [x] ~~`pdfstamp .` / `--all` / `-a` batch mode~~
+- [x] ~~Full pdftools convention compliance: `--version`, `--quiet`/`-q`, error prefixes, duplicate detection, `-` filename handling, `trap` cleanup, `chmod`+`xattr` copy~~
+- [x] ~~Bats test suite (35 tests, all passing)~~
+
 ## Open questions
 
 - **Tool name:** Is `pdfstamp` the right name? Consider whether the name is
@@ -15,3 +21,5 @@
 
 Run `bats tests/pdfstamp.bats` first — before writing any new code — to catch
 pre-existing failures early.
+
+Read `CONVENTIONS.md` in full before touching any CLI flags or adding features.
