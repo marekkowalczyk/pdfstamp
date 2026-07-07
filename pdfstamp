@@ -3,7 +3,7 @@
 # Function to display usage
 usage() {
   cat << EOF
-Usage: ${0##*/} [OPTIONS] [FILE]...
+Usage: ${0##*/} [OPTIONS] [-- ] [FILE... | .]
 Add the filename as a watermark to PDF files.
 
 Options:
@@ -11,6 +11,8 @@ Options:
   -n, --dry-run  Show what would be done without modifying files
   -v, --verbose  Explain what is being done
   -h, --help     Display this help and exit
+
+Passing . processes all *.pdf / *.PDF files in the current directory.
 
 Note: Options can be placed anywhere in the command.
 EOF
@@ -23,6 +25,7 @@ dry_run=false
 verbose=false
 exit_status=0
 files=()
+all=false
 
 # 1. Flexible Argument Parsing
 while [[ $# -gt 0 ]]; do
@@ -31,11 +34,27 @@ while [[ $# -gt 0 ]]; do
     -f|--first)   stamp_first_page=true; shift ;;
     -n|--dry-run) dry_run=true; shift ;;
     -v|--verbose) verbose=true; shift ;;
-    --)           shift; files+=("$@"); break ;; 
+    --)           shift; files+=("$@"); break ;;
     -*)           echo "Error: Unknown option '$1'" >&2; exit 1 ;;
-    *)            files+=("$1"); shift ;;         
+    .)            all=true; shift ;;
+    *)            files+=("$1"); shift ;;
   esac
 done
+
+if [[ "$all" == true && ${#files[@]} -gt 0 ]]; then
+  echo "Error: cannot combine . with explicit filenames." >&2; exit 1
+fi
+
+if [[ "$all" == true ]]; then
+  expanded=()
+  for f in *.pdf *.PDF; do
+    [[ -f "$f" ]] && expanded+=("$f")
+  done
+  if [[ ${#expanded[@]} -eq 0 ]]; then
+    echo "Error: no PDF files found in current directory." >&2; exit 1
+  fi
+  files=("${expanded[@]}")
+fi
 
 if [[ ${#files[@]} -eq 0 ]]; then
   echo "Error: No files specified." >&2; exit 1
